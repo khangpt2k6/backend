@@ -86,6 +86,15 @@ export const myProfile = TryCatch(async (req: AuthenticatedRequest, res) => {
   res.json(user);
 });
 
+export const testUpload = TryCatch(async (req: AuthenticatedRequest, res) => {
+  console.log("Test upload endpoint called");
+  res.json({
+    message: "Upload endpoint is working",
+    user: req.user,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 export const updateName = TryCatch(async (req: AuthenticatedRequest, res) => {
   const user = await User.findById(req.user?._id);
 
@@ -104,6 +113,48 @@ export const updateName = TryCatch(async (req: AuthenticatedRequest, res) => {
 
   res.json({
     message: "User Updated",
+    user,
+    token,
+  });
+});
+
+export const updateAvatar = TryCatch(async (req: AuthenticatedRequest, res) => {
+  console.log("Avatar upload request received");
+  console.log("Request body:", req.body);
+  console.log("Request file:", req.file);
+  console.log("Request headers:", req.headers);
+
+  const user = await User.findById(req.user?._id);
+
+  if (!user) {
+    console.log("User not found");
+    res.status(404).json({
+      message: "Please login",
+    });
+    return;
+  }
+
+  if (!req.file) {
+    console.log("No file uploaded");
+    res.status(400).json({
+      message: "Please upload an image",
+    });
+    return;
+  }
+
+  console.log("File uploaded successfully:", req.file);
+
+  // Update user avatar with Cloudinary URL
+  user.avatar = req.file.path;
+
+  await user.save();
+
+  const token = generateToken(user);
+
+  console.log("Avatar updated successfully for user:", user._id);
+
+  res.json({
+    message: "Avatar updated successfully",
     user,
     token,
   });

@@ -5,6 +5,7 @@ import { createClient } from "redis";
 import userRoutes from "./routes/user.js";
 import { connectRabbitMQ } from "./config/rabbitmq.js";
 import cors from "cors";
+import { errorHandler } from "./middleware/errorHandler.js";
 
 dotenv.config();
 
@@ -28,6 +29,9 @@ app.use(express.json());
 app.use(cors());
 
 app.use("/api/v1", userRoutes);
+
+// Error handling middleware (must be last)
+app.use(errorHandler);
 
 const port = process.env.PORT;
 
