@@ -1,10 +1,8 @@
-# 🚀 Microservices Chat Application
+#  Microservices Campus Social Chat Application
 
 A scalable, real-time chat application built with microservices architecture, featuring secure authentication, instant messaging, and email notifications.
 
-![Demo](https://media.giphy.com/media/L1R1tvI9svkIWwpVYr/giphy.gif)
-
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 This application follows a **microservices architecture** with independent services communicating through **RabbitMQ** message queues, ensuring high scalability and maintainability.
 
