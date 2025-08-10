@@ -75,37 +75,37 @@ cd microservices-chat-app
 
 #### User Service (.env)
 ```env
-MONGO_URI=mongodb://localhost:27017/chat_users
+MONGO_URI=
 PORT=5000
-REDIS_URL=redis://localhost:6379
+REDIS_URL=
 RABBITMQ_HOST=54.166.255.142
-RABBITMQ_USERNAME=your_username
-RABBITMQ_PASSWORD=your_password
-CLOUD_NAME=your_cloudinary_name
-CLOUD_API_KEY=your_cloudinary_key
-CLOUD_API_SECRET=your_cloudinary_secret
-JWT_SECRET=your_jwt_secret
+RABBITMQ_USERNAME=
+RABBITMQ_PASSWORD=
+CLOUD_NAME=
+CLOUD_API_KEY=
+CLOUD_API_SECRET=
+JWT_SECRET=
 ```
 
 #### Chat Service (.env)
 ```env
 PORT=5002
-MONGO_DB_URL=mongodb://localhost:27017/chat_messages
-JWT_SECRET=your_jwt_secret
+MONGO_DB_URL=
+JWT_SECRET=
 USER_SERVICE=http://localhost:5000
-CLOUD_NAME=your_cloudinary_name
-CLOUD_API_KEY=your_cloudinary_key
-CLOUD_API_SECRET=your_cloudinary_secret
+CLOUD_NAME=
+CLOUD_API_KEY=
+CLOUD_API_SECRET=
 ```
 
 #### Mail Service (.env)
 ```env
 PORT=5001
 RABBITMQ_HOST=54.166.255.142
-RABBITMQ_USERNAME=your_username
-RABBITMQ_PASSWORD=your_password
-USER_MAIL=your_smtp_email
-PASSWORD=your_smtp_password
+RABBITMQ_USERNAME=
+RABBITMQ_PASSWORD=
+USER_MAIL=
+PASSWORD=
 ```
 
 ### 3. Start Services
