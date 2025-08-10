@@ -6,10 +6,8 @@ A scalable, real-time chat application built with microservices architecture, fe
 
 This application follows a **microservices architecture** with independent services communicating through **RabbitMQ** message queues, ensuring high scalability and maintainability.
 
-```
 <img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/25f9a0b6-2a29-4e0b-9ada-2d1e8f0a695a" />
 
-```
 
 ## 🛠️ Tech Stack
 
