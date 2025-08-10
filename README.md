@@ -67,7 +67,7 @@ This application follows a **microservices architecture** with independent servi
 
 ### 1. Clone Repository
 ```bash
-git clone <repository-url>
+git clone https://github.com/khangpt2k6/Zelo_backend
 cd microservices-chat-app
 ```
 
