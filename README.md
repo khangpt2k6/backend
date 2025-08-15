@@ -1,4 +1,4 @@
-#  Microservices Campus Social Chat Application
+  #  Microservices Campus Social Chat App
 
 A scalable, real-time chat application built with microservices architecture, featuring secure authentication, instant messaging, and email notifications.
 
