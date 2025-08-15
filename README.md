@@ -2,6 +2,8 @@
 
 A scalable, real-time chat application built with microservices architecture, featuring secure authentication, instant messaging, and email notifications.
 
+Visit the Frontend Repo here: https://github.com/khangpt2k6/Zelo
+
 ## Architecture Overview
 
 This application follows a **microservices architecture** with independent services communicating through **RabbitMQ** message queues, ensuring high scalability and maintainability.
