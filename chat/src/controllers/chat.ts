@@ -321,3 +321,335 @@ export const getMessagesByChat = TryCatch(
     }
   }
 );
+
+// New controller functions for enhanced features
+
+export const replyToMessage = TryCatch(async (req: AuthenticatedRequest, res) => {
+  const senderId = req.user?._id;
+  const { chatId, text, replyToMessageId } = req.body;
+  const imageFile = req.file;
+
+  if (!senderId) {
+    res.status(401).json({
+      message: "Unauthorized",
+    });
+    return;
+  }
+
+  if (!chatId || !replyToMessageId) {
+    res.status(400).json({
+      message: "ChatId and replyToMessageId are required",
+    });
+    return;
+  }
+
+  if (!text && !imageFile) {
+    res.status(400).json({
+      message: "Either text or image is required",
+    });
+    return;
+  }
+
+  const chat = await Chat.findById(chatId);
+  if (!chat) {
+    res.status(404).json({
+      message: "Chat not found",
+    });
+    return;
+  }
+
+  const replyToMessage = await Messages.findById(replyToMessageId);
+  if (!replyToMessage) {
+    res.status(404).json({
+      message: "Reply message not found",
+    });
+    return;
+  }
+
+  const isUserInChat = chat.users.some(
+    (userId) => userId.toString() === senderId.toString()
+  );
+
+  if (!isUserInChat) {
+    res.status(403).json({
+      message: "You are not a participant of this chat",
+    });
+    return;
+  }
+
+  const otherUserId = chat.users.find(
+    (userId) => userId.toString() !== senderId.toString()
+  );
+
+  const receiverSocketId = getRecieverSocketId(otherUserId?.toString() || "");
+  let isReceiverInChatRoom = false;
+
+  if (receiverSocketId) {
+    const receiverSocket = io.sockets.sockets.get(receiverSocketId);
+    if (receiverSocket && receiverSocket.rooms.has(chatId)) {
+      isReceiverInChatRoom = true;
+    }
+  }
+
+  let messageData: any = {
+    chatId: chatId,
+    sender: senderId,
+    seen: isReceiverInChatRoom,
+    seenAt: isReceiverInChatRoom ? new Date() : undefined,
+    replyTo: {
+      messageId: replyToMessageId,
+      text: replyToMessage.text || "Image",
+      sender: replyToMessage.sender,
+    },
+  };
+
+  if (imageFile) {
+    messageData.image = {
+      url: imageFile.path,
+      publicId: imageFile.filename,
+    };
+    messageData.messageType = "image";
+    messageData.text = text || "";
+  } else {
+    messageData.text = text;
+    messageData.messageType = "text";
+  }
+
+  const message = new Messages(messageData);
+  const savedMessage = await message.save();
+
+  const latestMessageText = imageFile ? "📷 Image" : text;
+
+  await Chat.findByIdAndUpdate(
+    chatId,
+    {
+      latestMessage: {
+        text: latestMessageText,
+        sender: senderId,
+      },
+      updatedAt: new Date(),
+    },
+    { new: true }
+  );
+
+  // Emit to sockets
+  io.to(chatId).emit("newMessage", savedMessage);
+
+  if (receiverSocketId) {
+    io.to(receiverSocketId).emit("newMessage", savedMessage);
+  }
+
+  const senderSocketId = getRecieverSocketId(senderId.toString());
+  if (senderSocketId) {
+    io.to(senderSocketId).emit("newMessage", savedMessage);
+  }
+
+  res.status(201).json({
+    message: savedMessage,
+    sender: senderId,
+  });
+});
+
+export const pinMessage = TryCatch(async (req: AuthenticatedRequest, res) => {
+  const userId = req.user?._id;
+  const { messageId } = req.params;
+
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized",
+    });
+    return;
+  }
+
+  if (!messageId) {
+    res.status(400).json({
+      message: "MessageId is required",
+    });
+    return;
+  }
+
+  const message = await Messages.findById(messageId);
+  if (!message) {
+    res.status(404).json({
+      message: "Message not found",
+    });
+    return;
+  }
+
+  const chat = await Chat.findById(message.chatId);
+  if (!chat) {
+    res.status(404).json({
+      message: "Chat not found",
+    });
+    return;
+  }
+
+  const isUserInChat = chat.users.some(
+    (userId) => userId.toString() === userId.toString()
+  );
+
+  if (!isUserInChat) {
+    res.status(403).json({
+      message: "You are not a participant of this chat",
+    });
+    return;
+  }
+
+  // Toggle pin status
+  const isPinned = !message.isPinned;
+  
+  await Messages.findByIdAndUpdate(messageId, {
+    isPinned,
+    pinnedAt: isPinned ? new Date() : null,
+    pinnedBy: isPinned ? userId : null,
+  });
+
+  if (isPinned) {
+    // Add to chat's pinned messages if not already there
+    if (!chat.pinnedMessages.includes(messageId)) {
+      await Chat.findByIdAndUpdate(message.chatId, {
+        $addToSet: { pinnedMessages: messageId },
+      });
+    }
+  } else {
+    // Remove from chat's pinned messages
+    await Chat.findByIdAndUpdate(message.chatId, {
+      $pull: { pinnedMessages: messageId },
+    });
+  }
+
+  // Emit socket event
+  io.to(message.chatId.toString()).emit("messagePinned", {
+    messageId,
+    isPinned,
+    pinnedBy: userId,
+  });
+
+  res.json({
+    message: "Message pin status updated",
+    isPinned,
+  });
+});
+
+export const addReaction = TryCatch(async (req: AuthenticatedRequest, res) => {
+  const userId = req.user?._id;
+  const { messageId } = req.params;
+  const { emoji } = req.body;
+
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized",
+    });
+    return;
+  }
+
+  if (!messageId || !emoji) {
+    res.status(400).json({
+      message: "MessageId and emoji are required",
+    });
+    return;
+  }
+
+  const message = await Messages.findById(messageId);
+  if (!message) {
+    res.status(404).json({
+      message: "Message not found",
+    });
+    return;
+  }
+
+  const chat = await Chat.findById(message.chatId);
+  if (!chat) {
+    res.status(404).json({
+      message: "Chat not found",
+    });
+    return;
+  }
+
+  const isUserInChat = chat.users.some(
+    (id) => id.toString() === userId.toString()
+  );
+
+  if (!isUserInChat) {
+    res.status(403).json({
+      message: "You are not a participant of this chat",
+    });
+    return;
+  }
+
+  // Check if user already reacted with this emoji
+  const existingReaction = message.reactions.find(
+    (reaction) => reaction.userId === userId && reaction.emoji === emoji
+  );
+
+  if (existingReaction) {
+    // Remove reaction
+    await Messages.findByIdAndUpdate(messageId, {
+      $pull: { reactions: { userId, emoji } },
+    });
+  } else {
+    // Add reaction
+    await Messages.findByIdAndUpdate(messageId, {
+      $push: { reactions: { userId, emoji, createdAt: new Date() } },
+    });
+  }
+
+  const updatedMessage = await Messages.findById(messageId);
+
+  // Emit socket event
+  io.to(message.chatId.toString()).emit("messageReaction", {
+    messageId,
+    reactions: updatedMessage?.reactions || [],
+  });
+
+  res.json({
+    message: "Reaction updated",
+    reactions: updatedMessage?.reactions || [],
+  });
+});
+
+export const getPinnedMessages = TryCatch(async (req: AuthenticatedRequest, res) => {
+  const userId = req.user?._id;
+  const { chatId } = req.params;
+
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized",
+    });
+    return;
+  }
+
+  if (!chatId) {
+    res.status(400).json({
+      message: "ChatId is required",
+    });
+    return;
+  }
+
+  const chat = await Chat.findById(chatId);
+  if (!chat) {
+    res.status(404).json({
+      message: "Chat not found",
+    });
+    return;
+  }
+
+  const isUserInChat = chat.users.some(
+    (userId) => userId.toString() === userId.toString()
+  );
+
+  if (!isUserInChat) {
+    res.status(403).json({
+      message: "You are not a participant of this chat",
+    });
+    return;
+  }
+
+  const pinnedMessages = await Messages.find({
+    _id: { $in: chat.pinnedMessages },
+  }).sort({ pinnedAt: -1 });
+
+  res.json({
+    pinnedMessages,
+  });
+});
