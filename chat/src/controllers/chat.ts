@@ -19,11 +19,12 @@ export const createNewChat = TryCatch(
 
     const existingChat = await Chat.findOne({
       users: { $all: [userId, otherUserId], $size: 2 },
+      chatType: "private",
     });
 
     if (existingChat) {
       res.json({
-        message: "Chat already exitst",
+        message: "Chat already exists",
         chatId: existingChat._id,
       });
       return;
@@ -31,11 +32,47 @@ export const createNewChat = TryCatch(
 
     const newChat = await Chat.create({
       users: [userId, otherUserId],
+      chatType: "private",
+      createdBy: userId,
+      admins: [userId],
     });
 
     res.status(201).json({
       message: "New Chat created",
       chatId: newChat._id,
+    });
+  }
+);
+
+export const createGroupChat = TryCatch(
+  async (req: AuthenticatedRequest, res) => {
+    const userId = req.user?._id;
+    const { groupName, groupDescription, groupAvatar, userIds } = req.body;
+    
+    if (!groupName || !userIds || !Array.isArray(userIds) || userIds.length < 2) {
+      res.status(400).json({
+        message: "Group name and at least 2 users are required",
+      });
+      return;
+    }
+
+    // Add the creator to the users list if not already included
+    const allUsers = userIds.includes(userId) ? userIds : [userId, ...userIds];
+
+    const newGroupChat = await Chat.create({
+      users: allUsers,
+      chatType: "group",
+      groupName,
+      groupDescription,
+      groupAvatar,
+      createdBy: userId,
+      admins: [userId], // Creator is the first admin
+    });
+
+    res.status(201).json({
+      message: "Group chat created successfully",
+      chatId: newGroupChat._id,
+      group: newGroupChat,
     });
   }
 );
@@ -53,31 +90,51 @@ export const getAllChats = TryCatch(async (req: AuthenticatedRequest, res) => {
 
   const chatWithUserData = await Promise.all(
     chats.map(async (chat) => {
-      const otherUserId = chat.users.find((id) => id !== userId);
-
       const unseenCount = await Messages.countDocuments({
         chatId: chat._id,
         sender: { $ne: userId },
         seen: false,
       });
 
-      try {
-        const { data } = await axios.get(
-          `${process.env.USER_SERVICE}/api/v1/user/${otherUserId}`
-        );
+      if (chat.chatType === "private") {
+        // Handle private chats (existing logic)
+        const otherUserId = chat.users.find((id) => id !== userId);
 
+        try {
+          const { data } = await axios.get(
+            `${process.env.USER_SERVICE}/api/v1/user/${otherUserId}`
+          );
+
+          return {
+            user: data,
+            chat: {
+              ...chat.toObject(),
+              latestMessage: chat.latestMessage || null,
+              unseenCount,
+            },
+          };
+        } catch (error) {
+          console.log(error);
+          return {
+            user: { _id: otherUserId, name: "Unknown User" },
+            chat: {
+              ...chat.toObject(),
+              latestMessage: chat.latestMessage || null,
+              unseenCount,
+            },
+          };
+        }
+      } else {
+        // Handle group chats
         return {
-          user: data,
-          chat: {
-            ...chat.toObject(),
-            latestMessage: chat.latestMessage || null,
-            unseenCount,
+          user: {
+            _id: chat._id,
+            name: chat.groupName,
+            avatar: chat.groupAvatar,
+            isGroup: true,
+            memberCount: chat.users.length,
+            admins: chat.admins,
           },
-        };
-      } catch (error) {
-        console.log(error);
-        return {
-          user: { _id: otherUserId, name: "Unknown User" },
           chat: {
             ...chat.toObject(),
             latestMessage: chat.latestMessage || null,
@@ -651,5 +708,231 @@ export const getPinnedMessages = TryCatch(async (req: AuthenticatedRequest, res)
 
   res.json({
     pinnedMessages,
+  });
+});
+
+// Group Management Functions
+export const addUserToGroup = TryCatch(async (req: AuthenticatedRequest, res) => {
+  const userId = req.user?._id;
+  const { chatId } = req.params;
+  const { userIds } = req.body;
+
+  if (!userId || !chatId || !userIds || !Array.isArray(userIds)) {
+    res.status(400).json({
+      message: "ChatId and userIds array are required",
+    });
+    return;
+  }
+
+  const chat = await Chat.findById(chatId);
+  if (!chat) {
+    res.status(404).json({
+      message: "Chat not found",
+    });
+    return;
+  }
+
+  if (chat.chatType !== "group") {
+    res.status(400).json({
+      message: "This is not a group chat",
+    });
+    return;
+  }
+
+  if (!chat.admins.includes(userId)) {
+    res.status(403).json({
+      message: "Only admins can add users to the group",
+    });
+    return;
+  }
+
+  // Add new users to the group
+  const updatedChat = await Chat.findByIdAndUpdate(
+    chatId,
+    {
+      $addToSet: { users: { $each: userIds } },
+    },
+    { new: true }
+  );
+
+  res.json({
+    message: "Users added to group successfully",
+    chat: updatedChat,
+  });
+});
+
+export const removeUserFromGroup = TryCatch(async (req: AuthenticatedRequest, res) => {
+  const userId = req.user?._id;
+  const { chatId, targetUserId } = req.params;
+
+  if (!userId || !chatId || !targetUserId) {
+    res.status(400).json({
+      message: "ChatId and targetUserId are required",
+    });
+    return;
+  }
+
+  const chat = await Chat.findById(chatId);
+  if (!chat) {
+    res.status(404).json({
+      message: "Chat not found",
+    });
+    return;
+  }
+
+  if (chat.chatType !== "group") {
+    res.status(400).json({
+      message: "This is not a group chat",
+    });
+    return;
+  }
+
+  if (!chat.admins.includes(userId)) {
+    res.status(403).json({
+      message: "Only admins can remove users from the group",
+    });
+    return;
+  }
+
+  if (targetUserId === chat.createdBy) {
+    res.status(400).json({
+      message: "Cannot remove the group creator",
+    });
+    return;
+  }
+
+  // Remove user from the group
+  const updatedChat = await Chat.findByIdAndUpdate(
+    chatId,
+    {
+      $pull: { users: targetUserId },
+    },
+    { new: true }
+  );
+
+  res.json({
+    message: "User removed from group successfully",
+    chat: updatedChat,
+  });
+});
+
+export const updateGroupInfo = TryCatch(async (req: AuthenticatedRequest, res) => {
+  const userId = req.user?._id;
+  const { chatId } = req.params;
+  const { groupName, groupDescription, groupAvatar } = req.body;
+
+  if (!userId || !chatId) {
+    res.status(400).json({
+      message: "ChatId is required",
+    });
+    return;
+  }
+
+  const chat = await Chat.findById(chatId);
+  if (!chat) {
+    res.status(404).json({
+      message: "Chat not found",
+    });
+    return;
+  }
+
+  if (chat.chatType !== "group") {
+    res.status(400).json({
+      message: "This is not a group chat",
+    });
+    return;
+  }
+
+  if (!chat.admins.includes(userId)) {
+    res.status(403).json({
+      message: "Only admins can update group information",
+    });
+    return;
+  }
+
+  const updateData: any = {};
+  if (groupName) updateData.groupName = groupName;
+  if (groupDescription) updateData.groupDescription = groupDescription;
+  if (groupAvatar) updateData.groupAvatar = groupAvatar;
+
+  const updatedChat = await Chat.findByIdAndUpdate(
+    chatId,
+    updateData,
+    { new: true }
+  );
+
+  res.json({
+    message: "Group information updated successfully",
+    chat: updatedChat,
+  });
+});
+
+export const getGroupMembers = TryCatch(async (req: AuthenticatedRequest, res) => {
+  const userId = req.user?._id;
+  const { chatId } = req.params;
+
+  if (!userId || !chatId) {
+    res.status(400).json({
+      message: "ChatId is required",
+    });
+    return;
+  }
+
+  const chat = await Chat.findById(chatId);
+  if (!chat) {
+    res.status(404).json({
+      message: "Chat not found",
+    });
+    return;
+  }
+
+  if (chat.chatType !== "group") {
+    res.status(400).json({
+      message: "This is not a group chat",
+    });
+    return;
+  }
+
+  if (!chat.users.includes(userId)) {
+    res.status(403).json({
+      message: "You are not a member of this group",
+    });
+    return;
+  }
+
+  // Get user details for all group members
+  const memberDetails = await Promise.all(
+    chat.users.map(async (memberId) => {
+      try {
+        const { data } = await axios.get(
+          `${process.env.USER_SERVICE}/api/v1/user/${memberId}`
+        );
+        return {
+          ...data,
+          isAdmin: chat.admins.includes(memberId),
+          isCreator: memberId === chat.createdBy,
+        };
+      } catch (error) {
+        return {
+          _id: memberId,
+          name: "Unknown User",
+          isAdmin: chat.admins.includes(memberId),
+          isCreator: memberId === chat.createdBy,
+        };
+      }
+    })
+  );
+
+  res.json({
+    members: memberDetails,
+    groupInfo: {
+      _id: chat._id,
+      groupName: chat.groupName,
+      groupDescription: chat.groupDescription,
+      groupAvatar: chat.groupAvatar,
+      createdBy: chat.createdBy,
+      admins: chat.admins,
+      memberCount: chat.users.length,
+    },
   });
 });

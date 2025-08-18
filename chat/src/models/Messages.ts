@@ -17,6 +17,7 @@ export interface IMessage extends Document {
   messageType: "text" | "image";
   seen: boolean;
   seenAt?: Date;
+  seenBy: string[]; // Track who has seen the message (for group chats)
   // New fields for enhanced features
   replyTo?: {
     messageId: Types.ObjectId;
@@ -75,6 +76,10 @@ const schema = new Schema<IMessage>(
       type: Date,
       default: null,
     },
+    seenBy: [{
+      type: String,
+      default: [],
+    }],
     // New fields
     replyTo: {
       messageId: {
