@@ -5,6 +5,7 @@ import { Chat } from "../models/Chat.js";
 import { Messages } from "../models/Messages.js";
 import { getRecieverSocketId, io } from "../config/socket.js";
 import { workerData } from "worker_threads";
+import mongoose from "mongoose";
 
 export const createNewChat = TryCatch(
   async (req: AuthenticatedRequest, res) => {
@@ -555,7 +556,7 @@ export const pinMessage = TryCatch(async (req: AuthenticatedRequest, res) => {
   // Toggle pin status
   const isPinned = !message.isPinned;
   
-  await Messages.findByIdAndUpdate(messageId, {
+  await Messages.findByIdAndUpdate(new mongoose.Types.ObjectId(messageId), {
     isPinned,
     pinnedAt: isPinned ? new Date() : null,
     pinnedBy: isPinned ? userId : null,
@@ -563,15 +564,15 @@ export const pinMessage = TryCatch(async (req: AuthenticatedRequest, res) => {
 
   if (isPinned) {
     // Add to chat's pinned messages if not already there
-    if (!chat.pinnedMessages.includes(messageId)) {
+    if (!chat.pinnedMessages.some(id => id.toString() === messageId)) {
       await Chat.findByIdAndUpdate(message.chatId, {
-        $addToSet: { pinnedMessages: messageId },
+        $addToSet: { pinnedMessages: new mongoose.Types.ObjectId(messageId) },
       });
     }
   } else {
     // Remove from chat's pinned messages
     await Chat.findByIdAndUpdate(message.chatId, {
-      $pull: { pinnedMessages: messageId },
+      $pull: { pinnedMessages: new mongoose.Types.ObjectId(messageId) },
     });
   }
 
